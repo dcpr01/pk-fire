@@ -106,8 +106,7 @@ Without any topic rules, cards are still tagged by their Anki deck name.
 
 - **Close Anki before syncing.** Anki holds a lock on its SQLite database while running. Changes you make (new cards, moving cards between decks) aren't guaranteed to be flushed to disk until Anki closes. Always quit Anki before running `pk sync`.
 - **Moved or deleted cards?** Use `pk sync --rebuild`. A regular `pk sync` only appends new cards — it won't detect cards that moved between decks or were deleted. `--rebuild` wipes the vault's `.md` files and re-exports everything from Anki's current state.
-- **Deck pages are append-only.** You can safely add your own notes below the synced cards in deck pages. A regular `pk sync` will never overwrite them. However, `pk sync --rebuild` will — so back up any manual edits before rebuilding.
-- **Topic hub pages are rebuilt every sync.** Don't manually edit topic hub pages (CSS, OOP, Databases, etc.) — they're regenerated from scratch each time to stay accurate.
+- **Don't edit deck or topic pages directly.** These are managed by pk-fire and will be overwritten on `--rebuild`. Instead, create your own note files and link to topics with `[[wikilinks]]`. For example, create `My ORM Notes.md` containing `[[ORM]]` and `[[SQLAlchemy]]` — it'll connect in the graph and pk-fire will never touch it.
 - **The auto-sync add-on runs after Anki closes.** If you use `pk auto-sync --install`, the sync happens in the background right after Anki shuts down, so your vault is always up to date without manual intervention.
 
 ## How Sync Works

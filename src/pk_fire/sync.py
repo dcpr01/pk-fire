@@ -149,11 +149,16 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
     sync_file = os.path.join(output_dir, ".anki_sync_state.json")
 
     if rebuild:
-        # Clean slate: remove sync state and all generated .md files
+        # Only delete files pk-fire created (identified by frontmatter markers)
         if os.path.exists(sync_file):
             os.remove(sync_file)
         for f in Path(output_dir).glob("*.md"):
-            f.unlink()
+            try:
+                content = f.read_text(encoding='utf-8')
+                if 'managed_by: pk-fire' in content:
+                    f.unlink()
+            except Exception:
+                pass
 
     already_exported = load_sync_state(sync_file)
     is_first_run = len(already_exported) == 0
@@ -195,7 +200,7 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
         if not os.path.exists(filepath) or is_first_run:
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write("---\n")
-                f.write(f"deck: {dtag}\nsource: Anki\n")
+                f.write(f"managed_by: pk-fire\ndeck: {dtag}\nsource: Anki\n")
                 f.write(f"export_date: {datetime.now().strftime('%Y-%m-%d')}\ntags:\n")
                 for t in sorted(deck_topics | {dtag}):
                     f.write(f"  - {t}\n")
@@ -224,7 +229,7 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
             continue
         matching = topic_cards.get(topic, [])
         with open(os.path.join(output_dir, f"{topic}.md"), 'w', encoding='utf-8') as f:
-            f.write(f"---\ntype: topic\ncards: {len(matching)}\ntags:\n  - topic\n---\n\n# {topic}\n\n")
+            f.write(f"---\nmanaged_by: pk-fire\ntype: topic\ncards: {len(matching)}\ntags:\n  - topic\n---\n\n# {topic}\n\n")
             by_deck = {}
             for card in matching:
                 by_deck.setdefault(card['deck'], []).append(card)
