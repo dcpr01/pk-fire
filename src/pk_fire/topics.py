@@ -27,7 +27,7 @@ TOPIC_RULES = [
         r"\bflexbox\b", r"\bgrid\b", r"\bz-index\b",
         r"\blist[- ]style\b", r"\bshorthand\b",
         r"\bpseudo[- ]class\b", r"\bmedia quer", r"\bresponsive\b",
-        r"\bcss property\b", r"\bstyl(?:e|ing|ization)\b",
+        r"\bcss property\b", r"\bstylesheet\b", r"\bstyling\b",
     ]),
     ("OOP", [
         r"\bobject.oriented\b", r"\bOOP\b",

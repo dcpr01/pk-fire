@@ -67,6 +67,14 @@ def deck_tag(deck_name, overrides=None):
     return overrides.get(deck_name, deck_name.replace(' ', ''))
 
 
+def strip_html_plain(text):
+    """Strip HTML to plain text for topic inference (no markdown conversion)."""
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = html_mod.unescape(text)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+
 def infer_topic_tags(text):
     tags = set()
     for tag, patterns in COMPILED_TOPICS:
@@ -110,7 +118,7 @@ def format_obsidian_card(card, tag_overrides=None):
     front = ' '.join(escape_wikilinks(strip_html(raw_front)).splitlines()).strip()
     back = escape_wikilinks(strip_html(raw_back))
     all_tags = {deck_tag(card['deck'], tag_overrides)}
-    all_tags |= infer_topic_tags(raw_front + " " + raw_back)
+    all_tags |= infer_topic_tags(strip_html_plain(raw_front + " " + raw_back))
     links = '  '.join(f'[[{t}]]' for t in sorted(all_tags))
     lines = [f"> [!question]- {front}"]
     for answer_line in back.splitlines():
@@ -189,7 +197,7 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
         deck_topics = set()
         for card in all_deck_cards:
             combined = card['fields'][0] + ' ' + (card['fields'][1] if len(card['fields']) > 1 else '')
-            deck_topics |= infer_topic_tags(combined)
+            deck_topics |= infer_topic_tags(strip_html_plain(combined))
         all_topic_names |= deck_topics
         all_topic_names.add(dtag)
 
@@ -220,7 +228,7 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
     topic_cards = {}
     for card in cards:
         combined = card['fields'][0] + ' ' + (card['fields'][1] if len(card['fields']) > 1 else '')
-        for t in infer_topic_tags(combined):
+        for t in infer_topic_tags(strip_html_plain(combined)):
             topic_cards.setdefault(t, []).append(card)
 
     d_tags = {deck_tag(d, tag_overrides) for d in all_by_deck}
