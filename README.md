@@ -26,14 +26,32 @@ Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
 ```bash
 git clone https://github.com/dcpr01/pk-fire.git
 cd pk-fire
-uv pip install -e .
+uv tool install -e .
 ```
+
+This installs the `pk` command globally. Verify with:
+
+```bash
+pk --version
+```
+
+### Platform Notes
+
+- **macOS**: Anki data is at `~/Library/Application Support/Anki2/`
+- **Linux**: Anki data is at `~/.local/share/Anki2/`
+- **Windows**: Anki data is at `%APPDATA%/Anki2/`
+
+All paths are auto-detected. If you installed Anki via Flatpak on Linux, the data path may differ — use `--anki-db` to specify it manually.
 
 ## Quick Start
 
 ```bash
-# First run — provide your vault path once (saved to ~/.pk-fire.json)
+# First run — point to an existing Obsidian vault or a new folder
+# (the folder will be created if it doesn't exist)
 pk sync --vault ~/my-obsidian-vault
+
+# Then open that folder as a vault in Obsidian:
+#   Obsidian → Open folder as vault → select ~/my-obsidian-vault
 
 # Every run after that — just:
 pk sync
@@ -119,7 +137,7 @@ Without any topic rules, cards are still tagged by their Anki deck name.
 
 **Cards not showing up after sync?**
 - Make sure Anki is closed. Anki locks the database while running.
-- Reload the vault in Obsidian: `Cmd+P` → "Reload app without saving"
+- Reload the vault in Obsidian: `Ctrl+P` / `Cmd+P` → "Reload app without saving"
 
 **Cards in the wrong deck after moving them in Anki?**
 - Run `pk sync --rebuild` to re-export from scratch.
