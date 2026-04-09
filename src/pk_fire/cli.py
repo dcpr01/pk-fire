@@ -1,9 +1,9 @@
 """CLI entry point for pk-fire.
 
 Usage:
-    pk sync --vault ~/my-vault          Incremental sync
-    pk sync --vault ~/my-vault --full   Full re-export
-    pk install --vault ~/my-vault       Install Anki add-on for auto-sync
+    pk sync                  Incremental sync
+    pk sync --full           Full re-export
+    pk auto-sync --install   Install Anki add-on for auto-sync on close
 """
 
 import argparse
@@ -11,11 +11,24 @@ import json
 import os
 import platform
 import sys
-import textwrap
 from pathlib import Path
 
 from pk_fire import __version__
 from pk_fire.sync import sync
+
+CONFIG_FILE = Path.home() / ".pk-fire.json"
+
+
+def load_config():
+    if CONFIG_FILE.exists():
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    return {}
+
+
+def save_config(config):
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=2)
 
 
 def find_anki_db():
@@ -104,10 +117,42 @@ def install_anki_addon(vault_dir, anki_db):
     print(f"\n   Restart Anki to activate. Cards will sync when you close Anki.")
 
 
+def resolve_config(args):
+    """Resolve vault and anki_db from args, falling back to saved config."""
+    config = load_config()
+
+    anki_db = getattr(args, 'anki_db', None) or config.get('anki_db') or find_anki_db()
+    vault = getattr(args, 'vault', None) or config.get('vault')
+
+    if not anki_db or not os.path.exists(anki_db):
+        print("\u274c Could not find Anki database. Run: pk sync --anki-db /path/to/collection.anki2")
+        sys.exit(1)
+
+    if not vault:
+        print("\u274c No vault configured. Run: pk sync --vault ~/my-vault")
+        sys.exit(1)
+
+    vault = os.path.expanduser(vault)
+
+    # Persist for future runs
+    config['vault'] = vault
+    config['anki_db'] = anki_db
+    if getattr(args, 'tag_override', None):
+        overrides = {}
+        for pair in args.tag_override:
+            if '=' in pair:
+                k, v = pair.split('=', 1)
+                overrides[k] = v
+        config['tag_overrides'] = overrides
+    save_config(config)
+
+    return anki_db, vault, config.get('tag_overrides', {})
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="pk",
-        description="🔥 PK Fire — Sync Anki flashcards to Obsidian with smart topic tagging.",
+        description="\U0001f525 PK Fire \u2014 Sync Anki flashcards to Obsidian with smart topic tagging.",
     )
     parser.add_argument("--version", action="version", version=f"pk-fire {__version__}")
 
@@ -115,8 +160,8 @@ def main():
 
     # -- sync --
     sync_parser = subparsers.add_parser("sync", help="Sync Anki cards to Obsidian vault")
-    sync_parser.add_argument("--anki-db", help="Path to Anki's collection.anki2 (auto-detected if omitted)")
-    sync_parser.add_argument("--vault", required=True, help="Path to the Obsidian vault output directory")
+    sync_parser.add_argument("--anki-db", help="Path to collection.anki2 (saved after first use)")
+    sync_parser.add_argument("--vault", help="Path to Obsidian vault (saved after first use)")
     sync_parser.add_argument("--full", action="store_true", help="Full re-export (ignore sync state)")
     sync_parser.add_argument(
         "--tag-override",
@@ -125,36 +170,24 @@ def main():
         help="Override a deck name tag, e.g. 'Web Dev=WebDev'",
     )
 
-    # -- install --
-    install_parser = subparsers.add_parser("install", help="Install Anki add-on for auto-sync on close")
-    install_parser.add_argument("--anki-db", help="Path to Anki's collection.anki2 (auto-detected if omitted)")
-    install_parser.add_argument("--vault", required=True, help="Path to the Obsidian vault output directory")
+    # -- auto-sync --
+    auto_parser = subparsers.add_parser("auto-sync", help="Manage auto-sync on Anki close")
+    auto_parser.add_argument("--install", action="store_true", required=True, help="Install the Anki add-on")
+    auto_parser.add_argument("--anki-db", help="Path to collection.anki2 (saved after first use)")
+    auto_parser.add_argument("--vault", help="Path to Obsidian vault (saved after first use)")
 
     args = parser.parse_args()
 
-    # Default to sync if no subcommand
     if args.command is None:
         parser.print_help()
         sys.exit(0)
 
-    # Resolve Anki DB
-    anki_db = getattr(args, 'anki_db', None) or find_anki_db()
-    if not anki_db or not os.path.exists(anki_db):
-        print("❌ Could not find Anki database. Specify with --anki-db")
-        sys.exit(1)
+    anki_db, vault, tag_overrides = resolve_config(args)
 
-    vault = os.path.expanduser(args.vault)
-
-    if args.command == "install":
-        install_anki_addon(vault, anki_db)
-    elif args.command == "sync":
-        tag_overrides = {}
-        if args.tag_override:
-            for pair in args.tag_override:
-                if '=' in pair:
-                    k, v = pair.split('=', 1)
-                    tag_overrides[k] = v
+    if args.command == "sync":
         sync(anki_db, vault, tag_overrides=tag_overrides, full=args.full)
+    elif args.command == "auto-sync":
+        install_anki_addon(vault, anki_db)
 
 
 if __name__ == "__main__":
