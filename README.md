@@ -11,7 +11,7 @@ Anki is great at one thing: quick Q&A input with image support and rich formatti
 PK Fire turns Anki into a **frontend** for your personal knowledge management system:
 
 - **Add cards in Anki** like you always have
-- **Run `pk-sync`** and your cards appear in Obsidian as collapsible Q&A callouts with images
+- **Run `pk sync`** and your cards appear in Obsidian as collapsible Q&A callouts with images
 - **Smart topic tagging** auto-detects what each card is about and creates `[[wikilinks]]` so topics connect in Obsidian's graph view
 - **Topic hub pages** aggregate all cards for a given topic across decks
 - **Incremental sync** — only new cards are added, your Obsidian edits are preserved
