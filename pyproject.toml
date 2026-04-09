@@ -1,0 +1,18 @@
+[project]
+name = "pk-fire"
+version = "0.1.0"
+description = "Use Anki as a flashcard frontend backed by Obsidian's full PKM environment. Smart topic tagging, incremental sync, graph-connected knowledge."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+pk-sync = "pk_fire.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pk_fire"]
