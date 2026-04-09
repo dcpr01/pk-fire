@@ -132,7 +132,7 @@ def save_sync_state(sync_file, exported_ids):
         json.dump({"exported_ids": sorted(exported_ids), "last_sync": datetime.now().isoformat()}, f, indent=2)
 
 
-def sync(anki_db, output_dir, tag_overrides=None, full=False):
+def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
     """
     Sync Anki cards to an Obsidian vault.
 
@@ -140,7 +140,7 @@ def sync(anki_db, output_dir, tag_overrides=None, full=False):
         anki_db: Path to Anki's collection.anki2 file.
         output_dir: Path to the Obsidian vault / output directory.
         tag_overrides: Dict mapping deck names to custom tag names.
-        full: If True, ignore sync state and do a full re-export.
+        rebuild: If True, delete all generated files and rebuild from scratch.
     """
     tag_overrides = tag_overrides or {}
     Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -148,8 +148,12 @@ def sync(anki_db, output_dir, tag_overrides=None, full=False):
     Path(assets_dir).mkdir(exist_ok=True)
     sync_file = os.path.join(output_dir, ".anki_sync_state.json")
 
-    if full and os.path.exists(sync_file):
-        os.remove(sync_file)
+    if rebuild:
+        # Clean slate: remove sync state and all generated .md files
+        if os.path.exists(sync_file):
+            os.remove(sync_file)
+        for f in Path(output_dir).glob("*.md"):
+            f.unlink()
 
     already_exported = load_sync_state(sync_file)
     is_first_run = len(already_exported) == 0

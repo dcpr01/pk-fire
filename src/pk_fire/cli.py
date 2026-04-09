@@ -2,7 +2,7 @@
 
 Usage:
     pk sync                  Incremental sync
-    pk sync --full           Full re-export
+    pk sync --rebuild        Rebuild vault from scratch
     pk auto-sync --install   Install Anki add-on for auto-sync on close
 """
 
@@ -162,7 +162,7 @@ def main():
     sync_parser = subparsers.add_parser("sync", help="Sync Anki cards to Obsidian vault")
     sync_parser.add_argument("--anki-db", help="Path to collection.anki2 (saved after first use)")
     sync_parser.add_argument("--vault", help="Path to Obsidian vault (saved after first use)")
-    sync_parser.add_argument("--full", action="store_true", help="Full re-export (ignore sync state)")
+    sync_parser.add_argument("--rebuild", action="store_true", help="Rebuild vault from scratch (deletes and re-exports everything)")
     sync_parser.add_argument(
         "--tag-override",
         action="append",
@@ -185,7 +185,7 @@ def main():
     anki_db, vault, tag_overrides = resolve_config(args)
 
     if args.command == "sync":
-        sync(anki_db, vault, tag_overrides=tag_overrides, full=args.full)
+        sync(anki_db, vault, tag_overrides=tag_overrides, rebuild=args.rebuild)
     elif args.command == "auto-sync":
         install_anki_addon(vault, anki_db)
 

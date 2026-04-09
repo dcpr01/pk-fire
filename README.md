@@ -38,8 +38,8 @@ pk sync --vault ~/my-obsidian-vault
 # Every run after that — just:
 pk sync
 
-# Full re-export from scratch
-pk sync --full
+# Rebuild vault from scratch (moved cards, deleted cards, etc.)
+pk sync --rebuild
 
 # Override a deck tag name
 pk sync --tag-override "Web Dev=WebDev"
