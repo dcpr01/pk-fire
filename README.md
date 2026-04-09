@@ -33,16 +33,16 @@ uv pip install -e .
 
 ```bash
 # First sync — exports all cards
-pk-sync sync --vault ~/my-obsidian-vault
+pk sync --vault ~/my-obsidian-vault
 
 # Incremental sync — only new cards
-pk-sync sync --vault ~/my-obsidian-vault
+pk sync --vault ~/my-obsidian-vault
 
 # Full re-export from scratch
-pk-sync sync --vault ~/my-obsidian-vault --full
+pk sync --vault ~/my-obsidian-vault --full
 
 # Rename a deck tag (e.g. spaces in deck names)
-pk-sync sync --vault ~/my-obsidian-vault --tag-override "Web Dev=WebDev"
+pk sync --vault ~/my-obsidian-vault --tag-override "Web Dev=WebDev"
 ```
 
 Anki's database is auto-detected on macOS, Linux, and Windows. Override with `--anki-db` if needed.
@@ -50,7 +50,7 @@ Anki's database is auto-detected on macOS, Linux, and Windows. Override with `--
 ## Auto-Sync on Anki Close
 
 ```bash
-pk-sync install --vault ~/my-obsidian-vault
+pk install --vault ~/my-obsidian-vault
 ```
 
 Restart Anki. From then on, closing Anki triggers a background sync.

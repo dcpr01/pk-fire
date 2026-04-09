@@ -1,10 +1,9 @@
-"""
-CLI entry point for pk-fire.
+"""CLI entry point for pk-fire.
 
-Commands:
-    pk-sync              Incremental sync of new Anki cards to Obsidian
-    pk-sync --full       Full re-export (rebuilds everything)
-    pk-sync install      Install Anki add-on for auto-sync on close
+Usage:
+    pk sync --vault ~/my-vault          Incremental sync
+    pk sync --vault ~/my-vault --full   Full re-export
+    pk install --vault ~/my-vault       Install Anki add-on for auto-sync
 """
 
 import argparse
@@ -71,31 +70,25 @@ def install_anki_addon(vault_dir, anki_db):
 
     # Write the add-on
     init_py = addon_dir / "__init__.py"
-    init_py.write_text(textwrap.dedent(f'''\
-        """
-        PK Fire — Auto-sync Anki → Obsidian on profile close.
-        Installed by: pk-sync install
-        """
-        import subprocess
-        import sys
-        from aqt import gui_hooks
-
-        VAULT_DIR = {vault_dir!r}
-        ANKI_DB = {anki_db!r}
-
-        def on_profile_will_close():
-            """Run pk-sync when Anki is about to close."""
-            try:
-                subprocess.Popen(
-                    [sys.executable, "-m", "pk_fire", "--anki-db", ANKI_DB, "--vault", VAULT_DIR],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except Exception:
-                pass  # Don't block Anki from closing
-
-        gui_hooks.profile_will_close.append(on_profile_will_close)
-    '''))
+    addon_code = (
+        "# PK Fire - Auto-sync Anki to Obsidian on profile close.\n"
+        "import subprocess, sys\n"
+        "from aqt import gui_hooks\n"
+        "\n"
+        f"VAULT_DIR = {vault_dir!r}\n"
+        f"ANKI_DB = {anki_db!r}\n"
+        "\n"
+        "def on_profile_will_close():\n"
+        "    try:\n"
+        '        subprocess.Popen([sys.executable, "-m", "pk_fire", "sync",\n'
+        '            "--anki-db", ANKI_DB, "--vault", VAULT_DIR],\n'
+        "            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+        "    except Exception:\n"
+        "        pass\n"
+        "\n"
+        "gui_hooks.profile_will_close.append(on_profile_will_close)\n"
+    )
+    init_py.write_text(addon_code)
 
     # Write manifest
     manifest = addon_dir / "manifest.json"
@@ -113,14 +106,14 @@ def install_anki_addon(vault_dir, anki_db):
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="pk-sync",
+        prog="pk",
         description="🔥 PK Fire — Sync Anki flashcards to Obsidian with smart topic tagging.",
     )
     parser.add_argument("--version", action="version", version=f"pk-fire {__version__}")
 
     subparsers = parser.add_subparsers(dest="command")
 
-    # -- sync (default) --
+    # -- sync --
     sync_parser = subparsers.add_parser("sync", help="Sync Anki cards to Obsidian vault")
     sync_parser.add_argument("--anki-db", help="Path to Anki's collection.anki2 (auto-detected if omitted)")
     sync_parser.add_argument("--vault", required=True, help="Path to the Obsidian vault output directory")
