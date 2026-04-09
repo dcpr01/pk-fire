@@ -102,12 +102,36 @@ Tags ending with `__casesensitive` are matched without ignoring case — useful 
 
 Without any topic rules, cards are still tagged by their Anki deck name.
 
+## Important Notes
+
+- **Close Anki before syncing.** Anki holds a lock on its SQLite database while running. Changes you make (new cards, moving cards between decks) aren't guaranteed to be flushed to disk until Anki closes. Always quit Anki before running `pk sync`.
+- **Moved or deleted cards?** Use `pk sync --rebuild`. A regular `pk sync` only appends new cards — it won't detect cards that moved between decks or were deleted. `--rebuild` wipes the vault's `.md` files and re-exports everything from Anki's current state.
+- **Deck pages are append-only.** You can safely add your own notes below the synced cards in deck pages. A regular `pk sync` will never overwrite them. However, `pk sync --rebuild` will — so back up any manual edits before rebuilding.
+- **Topic hub pages are rebuilt every sync.** Don't manually edit topic hub pages (CSS, OOP, Databases, etc.) — they're regenerated from scratch each time to stay accurate.
+- **The auto-sync add-on runs after Anki closes.** If you use `pk auto-sync --install`, the sync happens in the background right after Anki shuts down, so your vault is always up to date without manual intervention.
+
 ## How Sync Works
 
 1. **First run**: Creates deck pages with YAML frontmatter, topic hub pages, and copies media
-2. **Subsequent runs**: Appends only new cards to deck pages. Rebuilds topic hubs. Copies new media.
-3. **Deck pages** are append-only — safe to add your own notes below the synced cards
-4. **Topic hub pages** are rebuilt each sync — don't edit these manually
+2. **Subsequent runs** (`pk sync`): Appends only new cards to deck pages. Rebuilds topic hubs. Copies new media.
+3. **Rebuild** (`pk sync --rebuild`): Deletes all generated `.md` files and re-exports everything from scratch. Use this after moving cards between decks, deleting cards, or renaming decks in Anki.
+
+## Troubleshooting
+
+**Cards not showing up after sync?**
+- Make sure Anki is closed. Anki locks the database while running.
+- Reload the vault in Obsidian: `Cmd+P` → "Reload app without saving"
+
+**Cards in the wrong deck after moving them in Anki?**
+- Run `pk sync --rebuild` to re-export from scratch.
+
+**Orphan pages or broken links in Obsidian's graph?**
+- Run `pk sync --rebuild` to clean up stale files.
+- Delete any manually created `.canvas` files in the vault.
+
+**"Could not find Anki database" error?**
+- Anki may not be installed, or you're using a non-standard profile location.
+- Specify the path manually: `pk sync --anki-db /path/to/collection.anki2`
 
 ## Dependencies
 
