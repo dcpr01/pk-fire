@@ -67,6 +67,50 @@ def deck_tag(deck_name, overrides=None):
     return overrides.get(deck_name, deck_name.replace(' ', ''))
 
 
+def parse_vault_topic_cards(output_dir):
+    """
+    Scan deck pages in the vault and build {topic: [(dtag, callout_block), ...]}
+    from the [[wikilinks]] in each card's Topics line.
+
+    This makes Obsidian the source of truth for hub pages — manual edits to
+    a card's Topics line are picked up on the next sync.
+    """
+    topic_cards = {}
+    for md_file in sorted(Path(output_dir).glob("*.md")):
+        try:
+            content = md_file.read_text(encoding='utf-8')
+        except Exception:
+            continue
+        if 'managed_by: pk-fire' not in content:
+            continue
+        fm_match = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
+        if not fm_match:
+            continue
+        fm_body = fm_match.group(1)
+        if 'type: topic' in fm_body:
+            continue  # skip hub pages
+        deck_match = re.search(r'^deck: (.+)$', fm_body, re.MULTILINE)
+        if not deck_match:
+            continue
+        dtag = deck_match.group(1).strip()
+
+        body = content[fm_match.end():]
+        # Split into individual callout blocks on the "> [!question]-" opener
+        blocks = re.split(r'\n(?=> \[!question\]-)', body)
+        for block in blocks:
+            block = block.strip()
+            if not block.startswith('> [!question]-'):
+                continue
+            topics_match = re.search(r'> \*\*Topics:\*\* (.+)$', block, re.MULTILINE)
+            if not topics_match:
+                continue
+            tags = re.findall(r'\[\[([^\]]+)\]\]', topics_match.group(1))
+            for tag in tags:
+                if tag != dtag:
+                    topic_cards.setdefault(tag, []).append((dtag, block))
+    return topic_cards
+
+
 def _parse_frontmatter_tags(content):
     """Return the set of tags listed in a file's YAML frontmatter."""
     fm = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
@@ -205,7 +249,32 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
 
     new_cards = [c for c in cards if c['id'] not in already_exported]
     if not new_cards and not is_first_run:
-        print("No new cards to sync. Already up to date.")
+        print("No new cards — rebuilding topic hubs from vault...")
+        vault_topic_cards = parse_vault_topic_cards(output_dir)
+        d_tags = {deck_tag(d, tag_overrides) for d in {c['deck'] for c in cards}}
+        for topic, card_blocks in sorted(vault_topic_cards.items()):
+            if topic in d_tags:
+                continue
+            hub_path = os.path.join(output_dir, f"{topic}.md")
+            pk_hub_tags = {'topic'}
+            try:
+                existing = _parse_frontmatter_tags(Path(hub_path).read_text(encoding='utf-8')) if os.path.exists(hub_path) else set()
+            except Exception:
+                existing = set()
+            user_tags = existing - pk_hub_tags
+            with open(hub_path, 'w', encoding='utf-8') as f:
+                f.write(f"---\nmanaged_by: pk-fire\ntype: topic\ncards: {len(card_blocks)}\ntags:\n")
+                for t in sorted(pk_hub_tags | user_tags):
+                    f.write(f"  - {t}\n")
+                f.write(f"---\n\n# {topic}\n\n")
+                by_deck = {}
+                for dtag_name, block in card_blocks:
+                    by_deck.setdefault(dtag_name, []).append(block)
+                for dtag_name in sorted(by_deck):
+                    f.write(f"## From [[{dtag_name}]]\n\n")
+                    for block in by_deck[dtag_name]:
+                        f.write(block + '\n\n')
+        print("🔥 Topic hubs up to date.")
         return
 
     new_by_deck, all_by_deck = {}, {}
@@ -215,7 +284,6 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
         all_by_deck.setdefault(card['deck'], []).append(card)
 
     total_new = 0
-    all_topic_names = set()
 
     for d_name, all_deck_cards in all_by_deck.items():
         dtag = deck_tag(d_name, tag_overrides)
@@ -226,8 +294,6 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
             combined = card['fields'][0] + ' ' + (card['fields'][1] if len(card['fields']) > 1 else '')
             deck_topics |= infer_topic_tags(strip_html_plain(combined), compiled_topics)
             deck_anki_tags |= flatten_anki_tags(card.get('anki_tags', []))
-        all_topic_names |= deck_topics | deck_anki_tags
-        all_topic_names.add(dtag)
 
         deck_new = new_by_deck.get(d_name, [])
         if not deck_new:
@@ -255,20 +321,14 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
         print(f"  ✓ {dtag + '.md':25s} +{len(deck_new)} new cards")
         total_new += len(deck_new)
 
-    # Rebuild topic hub pages
-    topic_cards = {}
-    for card in cards:
-        combined = card['fields'][0] + ' ' + (card['fields'][1] if len(card['fields']) > 1 else '')
-        for t in infer_topic_tags(strip_html_plain(combined), compiled_topics):
-            topic_cards.setdefault(t, []).append(card)
-        for t in flatten_anki_tags(card.get('anki_tags', [])):
-            topic_cards.setdefault(t, []).append(card)
-
+    # Rebuild topic hub pages from vault content (Obsidian is source of truth)
+    # Any [[wikilink]] a user adds to a card's Topics line is picked up here.
+    vault_topic_cards = parse_vault_topic_cards(output_dir)
     d_tags = {deck_tag(d, tag_overrides) for d in all_by_deck}
-    for topic in sorted(all_topic_names):
+
+    for topic, card_blocks in sorted(vault_topic_cards.items()):
         if topic in d_tags:
             continue
-        matching = topic_cards.get(topic, [])
         hub_path = os.path.join(output_dir, f"{topic}.md")
         pk_hub_tags = {'topic'}
         try:
@@ -276,19 +336,18 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
         except Exception:
             existing = preserved_tags.get(topic, set())
         user_tags = existing - pk_hub_tags
-        all_hub_tags = pk_hub_tags | user_tags
         with open(hub_path, 'w', encoding='utf-8') as f:
-            f.write(f"---\nmanaged_by: pk-fire\ntype: topic\ncards: {len(matching)}\ntags:\n")
-            for t in sorted(all_hub_tags):
+            f.write(f"---\nmanaged_by: pk-fire\ntype: topic\ncards: {len(card_blocks)}\ntags:\n")
+            for t in sorted(pk_hub_tags | user_tags):
                 f.write(f"  - {t}\n")
             f.write(f"---\n\n# {topic}\n\n")
             by_deck = {}
-            for card in matching:
-                by_deck.setdefault(card['deck'], []).append(card)
-            for dn, dc in sorted(by_deck.items()):
-                f.write(f"## From [[{deck_tag(dn, tag_overrides)}]]\n\n")
-                for card in dc:
-                    f.write(format_obsidian_card(card, tag_overrides, compiled_topics) + '\n\n')
+            for dtag_name, block in card_blocks:
+                by_deck.setdefault(dtag_name, []).append(block)
+            for dtag_name in sorted(by_deck):
+                f.write(f"## From [[{dtag_name}]]\n\n")
+                for block in by_deck[dtag_name]:
+                    f.write(block + '\n\n')
 
     # Copy new media
     anki_media = os.path.join(os.path.dirname(anki_db), "collection.media")
