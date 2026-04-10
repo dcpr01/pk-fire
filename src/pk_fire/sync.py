@@ -11,6 +11,7 @@ import re
 import json
 import html as html_mod
 import shutil
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -50,9 +51,22 @@ def _clean_topic_name(name):
     return stripped
 
 
+def _open_anki_db(anki_db):
+    """Open the Anki DB, copying to a temp file if locked (Anki is running)."""
+    try:
+        conn = sqlite3.connect(anki_db, timeout=1)
+        conn.execute("SELECT 1 FROM notes LIMIT 1")
+        return conn
+    except sqlite3.OperationalError:
+        tmp = tempfile.NamedTemporaryFile(suffix='.anki2', delete=False)
+        tmp.close()
+        shutil.copy2(anki_db, tmp.name)
+        return sqlite3.connect(tmp.name)
+
+
 def generate_topic_rules(anki_db):
     """Scan Anki deck names and tags to generate topic rules for this user."""
-    conn = sqlite3.connect(anki_db)
+    conn = _open_anki_db(anki_db)
     cursor = conn.cursor()
 
     # Collect all deck name segments (every level of nested decks)
@@ -245,7 +259,7 @@ def infer_topic_tags(text, compiled=None):
 
 
 def extract_anki_cards(anki_db):
-    conn = sqlite3.connect(anki_db)
+    conn = _open_anki_db(anki_db)
     cursor = conn.cursor()
     cursor.execute("SELECT id, name FROM decks")
     decks = {row[0]: row[1] for row in cursor.fetchall()}
