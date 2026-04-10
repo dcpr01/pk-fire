@@ -203,35 +203,17 @@ def main():
         install_anki_addon(vault, anki_db)
 
 
-def _topics_file():
-    return Path(__file__).parent / 'topics.py'
+def _read_topic_rules():
+    """Return the list of topic rules from config."""
+    config = load_config()
+    return config.get('topic_rules', [])
 
 
-def _read_user_topics():
-    """Return the list of user topic names currently in USER_TOPIC_RULES."""
-    import re
-    content = _topics_file().read_text(encoding='utf-8')
-    section = content.split('USER_TOPIC_RULES')[1]
-    return re.findall(r'^\s+\("([^"]+)",', section, re.MULTILINE)
-
-
-def _write_user_topics(topic_names):
-    """Rewrite the USER_TOPIC_RULES section in topics.py with the given list."""
-    import re
-    topics_file = _topics_file()
-    content = topics_file.read_text(encoding='utf-8')
-    new_entries = ''.join(
-        f'    ("{t}", [r"\\b{re.escape(t.removesuffix("__casesensitive"))}\\b"]),\n'
-        for t in topic_names
-    )
-    new_block = f'USER_TOPIC_RULES = [\n{new_entries}]'
-    content = re.sub(
-        r'USER_TOPIC_RULES\s*=\s*\[.*?\]',
-        new_block,
-        content,
-        flags=re.DOTALL,
-    )
-    topics_file.write_text(content, encoding='utf-8')
+def _write_topic_rules(rules):
+    """Write topic rules to config."""
+    config = load_config()
+    config['topic_rules'] = rules
+    save_config(config)
 
 
 def _topic_base(name):
@@ -240,64 +222,65 @@ def _topic_base(name):
 
 
 def _cmd_topics(args):
-    from pk_fire.topics import TOPIC_RULES
-    user_topics = _read_user_topics()
-    user_bases = [_topic_base(t) for t in user_topics]
+    import re
+    rules = _read_topic_rules()
+    topic_names = [r[0] for r in rules]
+    topic_bases = [_topic_base(t) for t in topic_names]
 
     if args.add:
         base = _topic_base(args.add)
-        if base in user_bases:
+        if base in topic_bases:
             print(f"Topic '{base}' already exists. Use --update to change its settings.")
             return
         name = base + '__casesensitive' if args.case_sensitive else base
-        _write_user_topics(user_topics + [name])
+        pattern = r"\b" + re.escape(base) + r"\b"
+        rules.append([name, [pattern]])
+        _write_topic_rules(rules)
         cs = " (case-sensitive)" if args.case_sensitive else ""
         print(f"Added topic: {base}{cs}")
         return
 
     if args.update:
         base = _topic_base(args.update)
-        if base not in user_bases:
-            print(f"Topic '{base}' not found in user topics.")
+        if base not in topic_bases:
+            print(f"Topic '{base}' not found in topics.")
             return
         if not args.case_sensitive and not args.case_insensitive:
             print("Specify --case-sensitive or --case-insensitive.")
             return
         new_name = base + '__casesensitive' if args.case_sensitive else base
-        new_topics = [new_name if _topic_base(t) == base else t for t in user_topics]
-        _write_user_topics(new_topics)
+        for r in rules:
+            if _topic_base(r[0]) == base:
+                r[0] = new_name
+        _write_topic_rules(rules)
         cs = " → case-sensitive" if args.case_sensitive else " → case-insensitive"
         print(f"Updated topic: {base}{cs}")
         return
 
     if args.delete:
         base = _topic_base(args.delete)
-        if base not in user_bases:
-            print(f"Topic '{base}' not found in user topics.")
+        if base not in topic_bases:
+            print(f"Topic '{base}' not found in topics.")
             return
-        _write_user_topics([t for t in user_topics if _topic_base(t) != base])
+        rules = [r for r in rules if _topic_base(r[0]) != base]
+        _write_topic_rules(rules)
         print(f"Removed topic: {base}")
         return
 
-    # List topics — deduplicate built-ins (Databases has a __casesensitive variant)
-    seen, built_in = set(), []
-    for raw_tag, _ in TOPIC_RULES:
+    # List topics — deduplicate (e.g. Databases has a __casesensitive variant)
+    if not rules:
+        print("No topics configured. Run `pk sync` to generate from your Anki decks,")
+        print("or use `pk topics --add TOPIC` to add manually.")
+        return
+
+    seen = set()
+    print("Topics:")
+    for raw_tag, _ in rules:
         t = raw_tag.removesuffix('__casesensitive')
         if t not in seen:
             seen.add(t)
-            built_in.append((t, raw_tag.endswith('__casesensitive')))
-
-    print("Built-in topics:")
-    for t, cs in built_in:
-        print(f"  {t}{' (case-sensitive)' if cs else ''}")
-
-    if user_topics:
-        print("\nUser topics:")
-        for t in user_topics:
-            cs = t.endswith('__casesensitive')
-            print(f"  {_topic_base(t)}{' (case-sensitive)' if cs else ''}")
-    else:
-        print("\nUser topics: (none — use --add to add)")
+            cs = raw_tag.endswith('__casesensitive')
+            print(f"  {t}{' (case-sensitive)' if cs else ''}")
 
 
 if __name__ == "__main__":

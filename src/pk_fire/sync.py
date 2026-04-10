@@ -14,11 +14,78 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from pk_fire.topics import TOPIC_RULES, USER_TOPIC_RULES
+CONFIG_FILE = Path.home() / ".pk-fire.json"
+
+
+def _load_config():
+    if CONFIG_FILE.exists():
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    return {}
+
+
+def _save_config(config):
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=2)
+
+
+def generate_topic_rules(anki_db):
+    """Scan Anki deck names and tags to generate topic rules for this user."""
+    conn = sqlite3.connect(anki_db)
+    cursor = conn.cursor()
+
+    # Collect deck names
+    cursor.execute("SELECT name FROM decks")
+    deck_names = {row[0] for row in cursor.fetchall()}
+
+    # Collect all Anki tags (flattened from hierarchical tags like JS::Arrays)
+    cursor.execute("SELECT tags FROM notes WHERE tags != ''")
+    all_tags = set()
+    for (tags_str,) in cursor.fetchall():
+        for tag in tags_str.split():
+            for part in tag.split('::'):
+                part = part.strip()
+                if part:
+                    all_tags.add(part)
+
+    conn.close()
+
+    # Build rules from deck names and tags, skipping generic ones
+    skip = {'Default', 'Uncategorized', ''}
+    topics = set()
+    for name in deck_names | all_tags:
+        # Use the leaf name for nested decks (e.g. "CS::Web Dev" -> "Web Dev")
+        leaf = name.split('::')[-1].strip()
+        if leaf and leaf not in skip:
+            topics.add(leaf)
+
+    rules = []
+    for topic in sorted(topics):
+        # Create a simple word-boundary regex for the topic name
+        pattern = r"\b" + re.escape(topic) + r"\b"
+        rules.append([topic, [pattern]])
+
+    return rules
+
+
+def load_topic_rules(anki_db=None):
+    """Load topic rules from config, generating on first run if needed."""
+    config = _load_config()
+    rules = config.get('topic_rules')
+
+    if rules is None and anki_db:
+        print("  Generating topic rules from your Anki decks...")
+        rules = generate_topic_rules(anki_db)
+        config['topic_rules'] = rules
+        _save_config(config)
+        print(f"  Generated {len(rules)} topic rules (saved to ~/.pk-fire.json)")
+
+    return rules or []
 
 
 def compile_topics(rules=None):
-    rules = list(rules or (TOPIC_RULES + USER_TOPIC_RULES))
+    if rules is None:
+        rules = load_topic_rules()
     compiled = []
     for raw_tag, patterns in rules:
         if raw_tag.endswith("__casesensitive"):
@@ -29,9 +96,6 @@ def compile_topics(rules=None):
             pats = [re.compile(p, re.IGNORECASE) for p in patterns]
         compiled.append((tag, pats))
     return compiled
-
-
-COMPILED_TOPICS = compile_topics()
 
 
 def strip_html(text):
@@ -140,7 +204,7 @@ def flatten_anki_tags(anki_tags):
 
 def infer_topic_tags(text, compiled=None):
     if compiled is None:
-        compiled = COMPILED_TOPICS
+        compiled = compile_topics()
     tags = set()
     for tag, patterns in compiled:
         for pat in patterns:
@@ -217,7 +281,7 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
         rebuild: If True, delete all generated files and rebuild from scratch.
     """
     tag_overrides = tag_overrides or {}
-    compiled_topics = compile_topics()
+    compiled_topics = compile_topics(load_topic_rules(anki_db))
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     assets_dir = os.path.join(output_dir, "assets")
     Path(assets_dir).mkdir(exist_ok=True)
