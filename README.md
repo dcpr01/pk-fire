@@ -13,9 +13,11 @@ PK Fire turns Anki into a **frontend** for your personal knowledge management sy
 - **Add cards in Anki** like you always have
 - **Run `pk sync`** and your cards appear in Obsidian as collapsible Q&A callouts with images
 - **Smart topic tagging** auto-detects what each card is about and creates `[[wikilinks]]` so topics connect in Obsidian's graph view
-- **Topic hub pages** aggregate all cards for a given topic across decks
+- **Anki tags carried over** — tags you've already added to cards in Anki are flattened (e.g. `JavaScript::Arrays` → `JavaScript` + `Arrays`) and merged into the card's topics automatically
+- **Topic hub pages** aggregate all cards for a given topic across decks, including Anki-native tags
 - **Incremental sync** — only new cards are added, your Obsidian edits are preserved
 - **Auto-sync on Anki close** via the bundled Anki add-on
+- **`pk topics`** — add or remove topic keywords without touching any Python files
 
 Your flashcards become first-class citizens in your PKM. Searchable, linkable, browsable.
 
@@ -119,6 +121,29 @@ TOPIC_RULES = [
 Tags ending with `__casesensitive` are matched without ignoring case — useful for acronyms or keywords that collide with common English words.
 
 Without any topic rules, cards are still tagged by their Anki deck name.
+
+### Managing Topics with `pk topics`
+
+Rather than editing `topics.py` manually, use the `pk topics` command to safely add and remove keyword topics:
+
+```bash
+# See all built-in topics and your user-added topics
+pk topics
+
+# Add a topic — any card mentioning "React" will be tagged [[React]]
+pk topics --add React
+
+# Remove a user topic
+pk topics --delete React
+```
+
+User topics are written directly into the `USER_TOPIC_RULES` section at the bottom of `topics.py`. They work identically to built-in rules: matched case-insensitively by keyword, hub pages are created, and cards are linked with `[[wikilinks]]`. The only difference is they're safe to add and remove without risking a typo in the regex syntax.
+
+### Anki Tags
+
+Tags already on your Anki cards are automatically brought across during sync — no setup needed. Hierarchical tags are flattened: `JavaScript::Arrays` becomes both a `[[JavaScript]]` tag and an `[[Arrays]]` tag. Each unique tag gets its own hub page in Obsidian if one doesn't already exist.
+
+Anki tags are **supplemental** — they stack on top of whatever topics pk-fire infers from the card content.
 
 ## Important Notes
 

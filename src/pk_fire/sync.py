@@ -14,11 +14,11 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from pk_fire.topics import TOPIC_RULES
+from pk_fire.topics import TOPIC_RULES, USER_TOPIC_RULES
 
 
 def compile_topics(rules=None):
-    rules = rules or TOPIC_RULES
+    rules = list(rules or (TOPIC_RULES + USER_TOPIC_RULES))
     compiled = []
     for raw_tag, patterns in rules:
         if raw_tag.endswith("__casesensitive"):
@@ -75,9 +75,22 @@ def strip_html_plain(text):
     return text.strip()
 
 
-def infer_topic_tags(text):
+def flatten_anki_tags(anki_tags):
+    """Flatten hierarchical Anki tags like 'JavaScript::Arrays' into {'JavaScript', 'Arrays'}."""
+    flat = set()
+    for tag in anki_tags:
+        for part in tag.split('::'):
+            part = part.strip()
+            if part:
+                flat.add(part)
+    return flat
+
+
+def infer_topic_tags(text, compiled=None):
+    if compiled is None:
+        compiled = COMPILED_TOPICS
     tags = set()
-    for tag, patterns in COMPILED_TOPICS:
+    for tag, patterns in compiled:
         for pat in patterns:
             if pat.search(text):
                 tags.add(tag)
@@ -110,7 +123,7 @@ def extract_anki_cards(anki_db):
     return cards
 
 
-def format_obsidian_card(card, tag_overrides=None):
+def format_obsidian_card(card, tag_overrides=None, compiled_topics=None):
     """Format a single card as a collapsible Obsidian callout with wikilinks."""
     fields = card['fields']
     raw_front = fields[0] if len(fields) > 0 else "?"
@@ -118,7 +131,8 @@ def format_obsidian_card(card, tag_overrides=None):
     front = ' '.join(escape_wikilinks(strip_html(raw_front)).splitlines()).strip()
     back = escape_wikilinks(strip_html(raw_back))
     all_tags = {deck_tag(card['deck'], tag_overrides)}
-    all_tags |= infer_topic_tags(strip_html_plain(raw_front + " " + raw_back))
+    all_tags |= flatten_anki_tags(card.get('anki_tags', []))
+    all_tags |= infer_topic_tags(strip_html_plain(raw_front + " " + raw_back), compiled_topics)
     links = '  '.join(f'[[{t}]]' for t in sorted(all_tags))
     lines = [f"> [!question]- {front}"]
     for answer_line in back.splitlines():
@@ -151,6 +165,7 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
         rebuild: If True, delete all generated files and rebuild from scratch.
     """
     tag_overrides = tag_overrides or {}
+    compiled_topics = compile_topics()
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     assets_dir = os.path.join(output_dir, "assets")
     Path(assets_dir).mkdir(exist_ok=True)
@@ -195,10 +210,12 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
         dtag = deck_tag(d_name, tag_overrides)
         filepath = os.path.join(output_dir, dtag + ".md")
         deck_topics = set()
+        deck_anki_tags = set()
         for card in all_deck_cards:
             combined = card['fields'][0] + ' ' + (card['fields'][1] if len(card['fields']) > 1 else '')
-            deck_topics |= infer_topic_tags(strip_html_plain(combined))
-        all_topic_names |= deck_topics
+            deck_topics |= infer_topic_tags(strip_html_plain(combined), compiled_topics)
+            deck_anki_tags |= flatten_anki_tags(card.get('anki_tags', []))
+        all_topic_names |= deck_topics | deck_anki_tags
         all_topic_names.add(dtag)
 
         deck_new = new_by_deck.get(d_name, [])
@@ -210,16 +227,16 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
                 f.write("---\n")
                 f.write(f"managed_by: pk-fire\ndeck: {dtag}\nsource: Anki\n")
                 f.write(f"export_date: {datetime.now().strftime('%Y-%m-%d')}\ntags:\n")
-                for t in sorted(deck_topics | {dtag}):
+                for t in sorted(deck_topics | deck_anki_tags | {dtag}):
                     f.write(f"  - {t}\n")
                 f.write("---\n\n")
                 f.write(f"# {d_name}\n\n")
                 for card in deck_new:
-                    f.write(format_obsidian_card(card, tag_overrides) + '\n\n')
+                    f.write(format_obsidian_card(card, tag_overrides, compiled_topics) + '\n\n')
         else:
             with open(filepath, 'a', encoding='utf-8') as f:
                 for card in deck_new:
-                    f.write(format_obsidian_card(card, tag_overrides) + '\n\n')
+                    f.write(format_obsidian_card(card, tag_overrides, compiled_topics) + '\n\n')
 
         print(f"  ✓ {dtag + '.md':25s} +{len(deck_new)} new cards")
         total_new += len(deck_new)
@@ -228,7 +245,9 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
     topic_cards = {}
     for card in cards:
         combined = card['fields'][0] + ' ' + (card['fields'][1] if len(card['fields']) > 1 else '')
-        for t in infer_topic_tags(strip_html_plain(combined)):
+        for t in infer_topic_tags(strip_html_plain(combined), compiled_topics):
+            topic_cards.setdefault(t, []).append(card)
+        for t in flatten_anki_tags(card.get('anki_tags', [])):
             topic_cards.setdefault(t, []).append(card)
 
     d_tags = {deck_tag(d, tag_overrides) for d in all_by_deck}
@@ -244,7 +263,7 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
             for dn, dc in sorted(by_deck.items()):
                 f.write(f"## From [[{deck_tag(dn, tag_overrides)}]]\n\n")
                 for card in dc:
-                    f.write(format_obsidian_card(card, tag_overrides) + '\n\n')
+                    f.write(format_obsidian_card(card, tag_overrides, compiled_topics) + '\n\n')
 
     # Copy new media
     anki_media = os.path.join(os.path.dirname(anki_db), "collection.media")

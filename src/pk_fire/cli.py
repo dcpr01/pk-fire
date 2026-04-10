@@ -176,10 +176,19 @@ def main():
     auto_parser.add_argument("--anki-db", help="Path to collection.anki2 (saved after first use)")
     auto_parser.add_argument("--vault", help="Path to Obsidian vault (saved after first use)")
 
+    # -- topics --
+    topics_parser = subparsers.add_parser("topics", help="View or manage user topic tags")
+    topics_parser.add_argument("--add", metavar="TOPIC", help="Add a user topic (matched by keyword at sync time)")
+    topics_parser.add_argument("--delete", metavar="TOPIC", help="Remove a user topic")
+
     args = parser.parse_args()
 
     if args.command is None:
         parser.print_help()
+        sys.exit(0)
+
+    if args.command == "topics":
+        _cmd_topics(args)
         sys.exit(0)
 
     anki_db, vault, tag_overrides = resolve_config(args)
@@ -188,6 +197,77 @@ def main():
         sync(anki_db, vault, tag_overrides=tag_overrides, rebuild=args.rebuild)
     elif args.command == "auto-sync":
         install_anki_addon(vault, anki_db)
+
+
+def _topics_file():
+    return Path(__file__).parent / 'topics.py'
+
+
+def _read_user_topics():
+    """Return the list of user topic names currently in USER_TOPIC_RULES."""
+    import re
+    content = _topics_file().read_text(encoding='utf-8')
+    section = content.split('USER_TOPIC_RULES')[1]
+    return re.findall(r'^\s+\("([^"]+)",', section, re.MULTILINE)
+
+
+def _write_user_topics(topic_names):
+    """Rewrite the USER_TOPIC_RULES section in topics.py with the given list."""
+    import re
+    topics_file = _topics_file()
+    content = topics_file.read_text(encoding='utf-8')
+    new_entries = ''.join(
+        f'    ("{t}", [r"\\b{re.escape(t)}\\b"]),\n'
+        for t in topic_names
+    )
+    new_block = f'USER_TOPIC_RULES = [\n{new_entries}]'
+    content = re.sub(
+        r'USER_TOPIC_RULES\s*=\s*\[.*?\]',
+        new_block,
+        content,
+        flags=re.DOTALL,
+    )
+    topics_file.write_text(content, encoding='utf-8')
+
+
+def _cmd_topics(args):
+    from pk_fire.topics import TOPIC_RULES
+    user_topics = _read_user_topics()
+
+    if args.add:
+        if args.add in user_topics:
+            print(f"Topic '{args.add}' already exists.")
+        else:
+            _write_user_topics(user_topics + [args.add])
+            print(f"Added topic: {args.add}")
+        return
+
+    if args.delete:
+        if args.delete not in user_topics:
+            print(f"Topic '{args.delete}' not found in user topics.")
+        else:
+            _write_user_topics([t for t in user_topics if t != args.delete])
+            print(f"Removed topic: {args.delete}")
+        return
+
+    # List topics — deduplicate built-ins (Databases has a __casesensitive variant)
+    seen, built_in = set(), []
+    for raw_tag, _ in TOPIC_RULES:
+        t = raw_tag.removesuffix('__casesensitive')
+        if t not in seen:
+            seen.add(t)
+            built_in.append(t)
+
+    print("Built-in topics:")
+    for t in built_in:
+        print(f"  {t}")
+
+    if user_topics:
+        print("\nUser topics:")
+        for t in user_topics:
+            print(f"  {t}")
+    else:
+        print("\nUser topics: (none — use --add to add)")
 
 
 if __name__ == "__main__":

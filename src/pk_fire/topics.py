@@ -58,9 +58,10 @@ TOPIC_RULES = [
         r"\biteration\b", r"\biterator\b",
     ]),
     ("HTTP", [
-        r"\bHTTP\b", r"\bREST\b", r"\bAPI\b", r"\bstatus code\b",
+        r"\bHTTP\b", r"\bREST API\b", r"\bstatus code\b",
         r"\b[2345]xx\b", r"\bendpoint\b",
         r"\bGET request\b", r"\bPOST request\b",
+        r"\bHTTP request\b", r"\bHTTP response\b",
     ]),
     ("Databases", [
         r"\bdatabase\b", r"\bDBMS\b", r"\brelational\b",
@@ -87,4 +88,8 @@ TOPIC_RULES = [
         r"\bmigrat", r"\balembic\b",
         r"\bdeclarative.base\b", r"\brelationship\(\b",
     ]),
+]
+
+# User topics — managed by `pk topics --add / --delete`. Do not edit manually.
+USER_TOPIC_RULES = [
 ]
