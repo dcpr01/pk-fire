@@ -181,7 +181,9 @@ def main():
     topics_parser.add_argument("--add", metavar="TOPIC", help="Add a user topic")
     topics_parser.add_argument("--delete", metavar="TOPIC", help="Remove a user topic")
     topics_parser.add_argument("--update", metavar="TOPIC", help="Update case sensitivity of an existing user topic")
-    topics_parser.add_argument("--case-sensitive", action="store_true", help="Match topic case-sensitively (use with --add or --update)")
+    cs_group = topics_parser.add_mutually_exclusive_group()
+    cs_group.add_argument("--case-sensitive", action="store_true", default=None, help="Match topic case-sensitively (use with --add or --update)")
+    cs_group.add_argument("--case-insensitive", action="store_true", default=None, help="Match topic case-insensitively (use with --update to revert)")
 
     args = parser.parse_args()
 
@@ -257,6 +259,9 @@ def _cmd_topics(args):
         base = _topic_base(args.update)
         if base not in user_bases:
             print(f"Topic '{base}' not found in user topics.")
+            return
+        if not args.case_sensitive and not args.case_insensitive:
+            print("Specify --case-sensitive or --case-insensitive.")
             return
         new_name = base + '__casesensitive' if args.case_sensitive else base
         new_topics = [new_name if _topic_base(t) == base else t for t in user_topics]
