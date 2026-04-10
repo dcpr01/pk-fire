@@ -170,9 +170,10 @@ def deck_tag(deck_name, overrides=None):
     overrides = overrides or {}
     if deck_name in overrides:
         return overrides[deck_name]
-    # Use the leaf name for nested decks (e.g. "Biology::Chapter 1" -> "Chapter1")
+    # Use the leaf name, cleaned of chapter/section prefixes
     leaf = deck_name.split('::')[-1].strip()
-    return leaf.replace(' ', '')
+    cleaned = _clean_topic_name(leaf)
+    return (cleaned or leaf).replace(' ', '')
 
 
 def parse_vault_topic_cards(output_dir):
