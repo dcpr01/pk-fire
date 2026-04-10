@@ -178,8 +178,10 @@ def main():
 
     # -- topics --
     topics_parser = subparsers.add_parser("topics", help="View or manage user topic tags")
-    topics_parser.add_argument("--add", metavar="TOPIC", help="Add a user topic (matched by keyword at sync time)")
+    topics_parser.add_argument("--add", metavar="TOPIC", help="Add a user topic")
     topics_parser.add_argument("--delete", metavar="TOPIC", help="Remove a user topic")
+    topics_parser.add_argument("--update", metavar="TOPIC", help="Update case sensitivity of an existing user topic")
+    topics_parser.add_argument("--case-sensitive", action="store_true", help="Match topic case-sensitively (use with --add or --update)")
 
     args = parser.parse_args()
 
@@ -217,7 +219,7 @@ def _write_user_topics(topic_names):
     topics_file = _topics_file()
     content = topics_file.read_text(encoding='utf-8')
     new_entries = ''.join(
-        f'    ("{t}", [r"\\b{re.escape(t)}\\b"]),\n'
+        f'    ("{t}", [r"\\b{re.escape(t.removesuffix("__casesensitive"))}\\b"]),\n'
         for t in topic_names
     )
     new_block = f'USER_TOPIC_RULES = [\n{new_entries}]'
@@ -230,24 +232,46 @@ def _write_user_topics(topic_names):
     topics_file.write_text(content, encoding='utf-8')
 
 
+def _topic_base(name):
+    """Strip __casesensitive suffix to get the plain topic name."""
+    return name.removesuffix('__casesensitive')
+
+
 def _cmd_topics(args):
     from pk_fire.topics import TOPIC_RULES
     user_topics = _read_user_topics()
+    user_bases = [_topic_base(t) for t in user_topics]
 
     if args.add:
-        if args.add in user_topics:
-            print(f"Topic '{args.add}' already exists.")
-        else:
-            _write_user_topics(user_topics + [args.add])
-            print(f"Added topic: {args.add}")
+        base = _topic_base(args.add)
+        if base in user_bases:
+            print(f"Topic '{base}' already exists. Use --update to change its settings.")
+            return
+        name = base + '__casesensitive' if args.case_sensitive else base
+        _write_user_topics(user_topics + [name])
+        cs = " (case-sensitive)" if args.case_sensitive else ""
+        print(f"Added topic: {base}{cs}")
+        return
+
+    if args.update:
+        base = _topic_base(args.update)
+        if base not in user_bases:
+            print(f"Topic '{base}' not found in user topics.")
+            return
+        new_name = base + '__casesensitive' if args.case_sensitive else base
+        new_topics = [new_name if _topic_base(t) == base else t for t in user_topics]
+        _write_user_topics(new_topics)
+        cs = " → case-sensitive" if args.case_sensitive else " → case-insensitive"
+        print(f"Updated topic: {base}{cs}")
         return
 
     if args.delete:
-        if args.delete not in user_topics:
-            print(f"Topic '{args.delete}' not found in user topics.")
-        else:
-            _write_user_topics([t for t in user_topics if t != args.delete])
-            print(f"Removed topic: {args.delete}")
+        base = _topic_base(args.delete)
+        if base not in user_bases:
+            print(f"Topic '{base}' not found in user topics.")
+            return
+        _write_user_topics([t for t in user_topics if _topic_base(t) != base])
+        print(f"Removed topic: {base}")
         return
 
     # List topics — deduplicate built-ins (Databases has a __casesensitive variant)
@@ -256,16 +280,17 @@ def _cmd_topics(args):
         t = raw_tag.removesuffix('__casesensitive')
         if t not in seen:
             seen.add(t)
-            built_in.append(t)
+            built_in.append((t, raw_tag.endswith('__casesensitive')))
 
     print("Built-in topics:")
-    for t in built_in:
-        print(f"  {t}")
+    for t, cs in built_in:
+        print(f"  {t}{' (case-sensitive)' if cs else ''}")
 
     if user_topics:
         print("\nUser topics:")
         for t in user_topics:
-            print(f"  {t}")
+            cs = t.endswith('__casesensitive')
+            print(f"  {_topic_base(t)}{' (case-sensitive)' if cs else ''}")
     else:
         print("\nUser topics: (none — use --add to add)")
 
