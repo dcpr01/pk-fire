@@ -67,6 +67,14 @@ def deck_tag(deck_name, overrides=None):
     return overrides.get(deck_name, deck_name.replace(' ', ''))
 
 
+def _parse_frontmatter_tags(content):
+    """Return the set of tags listed in a file's YAML frontmatter."""
+    fm = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
+    if not fm:
+        return set()
+    return set(re.findall(r'^\s+- (.+)$', fm.group(1), re.MULTILINE))
+
+
 def strip_html_plain(text):
     """Strip HTML to plain text for topic inference (no markdown conversion)."""
     text = re.sub(r'<[^>]+>', ' ', text)
@@ -171,6 +179,8 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
     Path(assets_dir).mkdir(exist_ok=True)
     sync_file = os.path.join(output_dir, ".anki_sync_state.json")
 
+    # Preserve user-added frontmatter tags across rebuilds and hub page rewrites
+    preserved_tags = {}  # filename stem → set of tags from previous file
     if rebuild:
         # Only delete files pk-fire created (identified by frontmatter markers)
         if os.path.exists(sync_file):
@@ -179,6 +189,7 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
             try:
                 content = f.read_text(encoding='utf-8')
                 if 'managed_by: pk-fire' in content:
+                    preserved_tags[f.stem] = _parse_frontmatter_tags(content)
                     f.unlink()
             except Exception:
                 pass
@@ -223,11 +234,14 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
             continue
 
         if not os.path.exists(filepath) or is_first_run:
+            pk_tags = deck_topics | deck_anki_tags | {dtag}
+            existing = preserved_tags.get(dtag, set())
+            user_tags = existing - pk_tags  # tags the user added that pk-fire didn't generate
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write("---\n")
                 f.write(f"managed_by: pk-fire\ndeck: {dtag}\nsource: Anki\n")
                 f.write(f"export_date: {datetime.now().strftime('%Y-%m-%d')}\ntags:\n")
-                for t in sorted(deck_topics | deck_anki_tags | {dtag}):
+                for t in sorted(pk_tags | user_tags):
                     f.write(f"  - {t}\n")
                 f.write("---\n\n")
                 f.write(f"# {d_name}\n\n")
@@ -255,8 +269,19 @@ def sync(anki_db, output_dir, tag_overrides=None, rebuild=False):
         if topic in d_tags:
             continue
         matching = topic_cards.get(topic, [])
-        with open(os.path.join(output_dir, f"{topic}.md"), 'w', encoding='utf-8') as f:
-            f.write(f"---\nmanaged_by: pk-fire\ntype: topic\ncards: {len(matching)}\ntags:\n  - topic\n---\n\n# {topic}\n\n")
+        hub_path = os.path.join(output_dir, f"{topic}.md")
+        pk_hub_tags = {'topic'}
+        try:
+            existing = _parse_frontmatter_tags(Path(hub_path).read_text(encoding='utf-8')) if os.path.exists(hub_path) else preserved_tags.get(topic, set())
+        except Exception:
+            existing = preserved_tags.get(topic, set())
+        user_tags = existing - pk_hub_tags
+        all_hub_tags = pk_hub_tags | user_tags
+        with open(hub_path, 'w', encoding='utf-8') as f:
+            f.write(f"---\nmanaged_by: pk-fire\ntype: topic\ncards: {len(matching)}\ntags:\n")
+            for t in sorted(all_hub_tags):
+                f.write(f"  - {t}\n")
+            f.write(f"---\n\n# {topic}\n\n")
             by_deck = {}
             for card in matching:
                 by_deck.setdefault(card['deck'], []).append(card)
