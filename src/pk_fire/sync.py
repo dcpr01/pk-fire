@@ -29,14 +29,40 @@ def _save_config(config):
         json.dump(config, f, indent=2)
 
 
+def _clean_topic_name(name):
+    """Strip chapter/section prefixes and numbering, keep the meaningful part.
+
+    "Chapter 3 - Cell Division" -> "Cell Division"
+    "Ch.3 Cell Division"        -> "Cell Division"
+    "Unit 2: Genetics"          -> "Genetics"
+    "Chapter 7"                 -> None  (pure noise, nothing useful left)
+    "Organic Chemistry"         -> "Organic Chemistry"  (no prefix to strip)
+    """
+    prefixes = r'(?:chapter|ch\.?|unit|section|part|lesson|week|module|lecture)\s*\d+'
+    # Strip prefix + optional separator (-, :, –, —)
+    stripped = re.sub(
+        r'^' + prefixes + r'\s*[-:–—]?\s*',
+        '', name, flags=re.IGNORECASE,
+    ).strip()
+    # If nothing meaningful remains, or it's just a number, it's noise
+    if not stripped or re.match(r'^\d+$', stripped):
+        return None
+    return stripped
+
+
 def generate_topic_rules(anki_db):
     """Scan Anki deck names and tags to generate topic rules for this user."""
     conn = sqlite3.connect(anki_db)
     cursor = conn.cursor()
 
-    # Collect deck names
+    # Collect all deck name segments (every level of nested decks)
     cursor.execute("SELECT name FROM decks")
-    deck_names = {row[0] for row in cursor.fetchall()}
+    deck_segments = set()
+    for (name,) in cursor.fetchall():
+        for part in name.split('::'):
+            part = part.strip()
+            if part:
+                deck_segments.add(part)
 
     # Collect all Anki tags (flattened from hierarchical tags like JS::Arrays)
     cursor.execute("SELECT tags FROM notes WHERE tags != ''")
@@ -50,18 +76,18 @@ def generate_topic_rules(anki_db):
 
     conn.close()
 
-    # Build rules from deck names and tags, skipping generic ones
+    # Build rules, cleaning prefixes and skipping pure noise
     skip = {'Default', 'Uncategorized', ''}
     topics = set()
-    for name in deck_names | all_tags:
-        # Use the leaf name for nested decks (e.g. "CS::Web Dev" -> "Web Dev")
-        leaf = name.split('::')[-1].strip()
-        if leaf and leaf not in skip:
-            topics.add(leaf)
+    for name in deck_segments | all_tags:
+        if name in skip:
+            continue
+        cleaned = _clean_topic_name(name)
+        if cleaned:
+            topics.add(cleaned)
 
     rules = []
     for topic in sorted(topics):
-        # Create a simple word-boundary regex for the topic name
         pattern = r"\b" + re.escape(topic) + r"\b"
         rules.append([topic, [pattern]])
 
@@ -128,7 +154,11 @@ def escape_wikilinks(text):
 
 def deck_tag(deck_name, overrides=None):
     overrides = overrides or {}
-    return overrides.get(deck_name, deck_name.replace(' ', ''))
+    if deck_name in overrides:
+        return overrides[deck_name]
+    # Use the leaf name for nested decks (e.g. "Biology::Chapter 1" -> "Chapter1")
+    leaf = deck_name.split('::')[-1].strip()
+    return leaf.replace(' ', '')
 
 
 def parse_vault_topic_cards(output_dir):
