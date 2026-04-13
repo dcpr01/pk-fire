@@ -71,7 +71,15 @@ def find_anki_addons_dir():
     return None
 
 
-def install_anki_addon(vault_dir, anki_db):
+def _resolve_output_dir(vault_dir, subdir=None):
+    """Return the actual directory pk-fire should manage inside the vault."""
+    vault_path = Path(os.path.expanduser(vault_dir))
+    if subdir:
+        return str(vault_path / subdir)
+    return str(vault_path)
+
+
+def install_anki_addon(vault_dir, anki_db, subdir=None):
     """Install a small Anki add-on that triggers pk-sync on profile close."""
     addons_dir = find_anki_addons_dir()
     if not addons_dir:
@@ -83,6 +91,9 @@ def install_anki_addon(vault_dir, anki_db):
 
     # Write the add-on
     init_py = addon_dir / "__init__.py"
+    subdir_args = ""
+    if subdir:
+        subdir_args = f', "--subdir", {subdir!r}'
     addon_code = (
         "# PK Fire - Auto-sync Anki to Obsidian on profile close.\n"
         "import subprocess, sys\n"
@@ -94,7 +105,7 @@ def install_anki_addon(vault_dir, anki_db):
         "def on_profile_will_close():\n"
         "    try:\n"
         '        subprocess.Popen([sys.executable, "-m", "pk_fire", "sync",\n'
-        '            "--anki-db", ANKI_DB, "--vault", VAULT_DIR],\n'
+        f'            "--anki-db", ANKI_DB, "--vault", VAULT_DIR{subdir_args}],\n'
         "            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
         "    except Exception:\n"
         "        pass\n"
@@ -113,6 +124,7 @@ def install_anki_addon(vault_dir, anki_db):
 
     print(f"✅ Anki add-on installed to {addon_dir}")
     print(f"   Vault: {vault_dir}")
+    print(f"   Output: {_resolve_output_dir(vault_dir, subdir)}")
     print(f"   DB:    {anki_db}")
     print(f"\n   Restart Anki to activate. Cards will sync when you close Anki.")
 
@@ -123,6 +135,9 @@ def resolve_config(args):
 
     anki_db = getattr(args, 'anki_db', None) or config.get('anki_db') or find_anki_db()
     vault = getattr(args, 'vault', None) or config.get('vault')
+    subdir = getattr(args, 'subdir', None)
+    if subdir is None:
+        subdir = config.get('subdir')
 
     if not anki_db or not os.path.exists(anki_db):
         print("\u274c Could not find Anki database. Run: pk sync --anki-db /path/to/collection.anki2")
@@ -137,6 +152,7 @@ def resolve_config(args):
     # Persist for future runs
     config['vault'] = vault
     config['anki_db'] = anki_db
+    config['subdir'] = subdir
     if getattr(args, 'tag_override', None):
         overrides = {}
         for pair in args.tag_override:
@@ -146,7 +162,7 @@ def resolve_config(args):
         config['tag_overrides'] = overrides
     save_config(config)
 
-    return anki_db, vault, config.get('tag_overrides', {})
+    return anki_db, vault, subdir, config.get('tag_overrides', {})
 
 
 def main():
@@ -162,6 +178,7 @@ def main():
     sync_parser = subparsers.add_parser("sync", help="Sync Anki cards to Obsidian vault")
     sync_parser.add_argument("--anki-db", help="Path to collection.anki2 (saved after first use)")
     sync_parser.add_argument("--vault", help="Path to Obsidian vault (saved after first use)")
+    sync_parser.add_argument("--subdir", help="Optional managed subfolder inside the vault, e.g. 'PK_Fire'")
     sync_parser.add_argument("--rebuild", action="store_true", help="Rebuild vault from scratch (deletes and re-exports everything)")
     sync_parser.add_argument(
         "--tag-override",
@@ -175,6 +192,7 @@ def main():
     auto_parser.add_argument("--install", action="store_true", required=True, help="Install the Anki add-on")
     auto_parser.add_argument("--anki-db", help="Path to collection.anki2 (saved after first use)")
     auto_parser.add_argument("--vault", help="Path to Obsidian vault (saved after first use)")
+    auto_parser.add_argument("--subdir", help="Optional managed subfolder inside the vault, e.g. 'PK_Fire'")
 
     # -- topics --
     topics_parser = subparsers.add_parser("topics", help="View or manage user topic tags")
@@ -195,12 +213,13 @@ def main():
         _cmd_topics(args)
         sys.exit(0)
 
-    anki_db, vault, tag_overrides = resolve_config(args)
+    anki_db, vault, subdir, tag_overrides = resolve_config(args)
+    output_dir = _resolve_output_dir(vault, subdir)
 
     if args.command == "sync":
-        sync(anki_db, vault, tag_overrides=tag_overrides, rebuild=args.rebuild)
+        sync(anki_db, output_dir, tag_overrides=tag_overrides, rebuild=args.rebuild)
     elif args.command == "auto-sync":
-        install_anki_addon(vault, anki_db)
+        install_anki_addon(vault, anki_db, subdir=subdir)
 
 
 def _read_topic_rules():

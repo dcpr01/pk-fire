@@ -52,6 +52,9 @@ All paths are auto-detected. If you installed Anki via Flatpak on Linux, the dat
 # (the folder will be created if it doesn't exist)
 pk sync --vault ~/my-obsidian-vault
 
+# Safer option — keep pk-fire content in a dedicated subfolder inside your vault
+pk sync --vault ~/my-obsidian-vault --subdir PK_Fire
+
 # Then open that folder as a vault in Obsidian:
 #   Obsidian → Open folder as vault → select ~/my-obsidian-vault
 
@@ -65,7 +68,7 @@ pk sync --rebuild
 pk sync --tag-override "Web Dev=WebDev"
 ```
 
-Anki's database and vault path are auto-detected and saved after first use. Override anytime with `--anki-db` or `--vault`.
+Anki's database, vault path, and optional managed subfolder are auto-detected and saved after first use. Override anytime with `--anki-db`, `--vault`, or `--subdir`.
 
 ## Auto-Sync on Anki Close
 
@@ -77,6 +80,8 @@ Restart Anki. From then on, closing Anki triggers a background sync.
 
 ## Output Structure
 
+Without `--subdir`, pk-fire writes directly into the vault root:
+
 ```
 my-vault/
 ├── Biology.md           # Deck page — all cards from this deck
@@ -85,6 +90,20 @@ my-vault/
 ├── Grammar.md           # Topic hub
 ├── assets/              # Images from Anki cards
 └── .anki_sync_state.json
+```
+
+With `--subdir PK_Fire`, generated content stays isolated:
+
+```
+my-vault/
+├── PK_Fire/
+│   ├── Biology.md
+│   ├── Spanish.md
+│   ├── Genetics.md
+│   ├── Grammar.md
+│   ├── assets/
+│   └── .anki_sync_state.json
+└── Cursor_Resources/
 ```
 
 ### Card Format
@@ -148,7 +167,7 @@ Anki tags are **supplemental** — they stack on top of whatever topics pk-fire 
 ## Important Notes
 
 - **Close Anki before syncing.** Anki holds a lock on its SQLite database while running. Changes you make (new cards, moving cards between decks) aren't guaranteed to be flushed to disk until Anki closes. Always quit Anki before running `pk sync`.
-- **Moved or deleted cards?** Use `pk sync --rebuild`. A regular `pk sync` only appends new cards — it won't detect cards that moved between decks or were deleted. `--rebuild` wipes the vault's `.md` files and re-exports everything from Anki's current state.
+- **Moved or deleted cards?** Use `pk sync --rebuild`. A regular `pk sync` only appends new cards — it won't detect cards that moved between decks or were deleted. `--rebuild` wipes pk-fire-managed `.md` files in the configured output directory and re-exports everything from Anki's current state.
 - **Don't edit deck or topic pages directly.** These are managed by pk-fire and will be overwritten on `--rebuild`. Instead, create your own note files and link to topics with `[[wikilinks]]`. For example, create `My ORM Notes.md` containing `[[ORM]]` and `[[SQLAlchemy]]` — it'll connect in the graph and pk-fire will never touch it.
 - **The auto-sync add-on runs after Anki closes.** If you use `pk auto-sync --install`, the sync happens in the background right after Anki shuts down, so your vault is always up to date without manual intervention.
 
@@ -156,7 +175,7 @@ Anki tags are **supplemental** — they stack on top of whatever topics pk-fire 
 
 1. **First run**: Creates deck pages with YAML frontmatter, topic hub pages, and copies media
 2. **Subsequent runs** (`pk sync`): Appends only new cards to deck pages. Rebuilds topic hubs. Copies new media.
-3. **Rebuild** (`pk sync --rebuild`): Deletes all generated `.md` files and re-exports everything from scratch. Use this after moving cards between decks, deleting cards, or renaming decks in Anki.
+3. **Rebuild** (`pk sync --rebuild`): Deletes all generated `.md` files in the configured output directory and re-exports everything from scratch. Use this after moving cards between decks, deleting cards, or renaming decks in Anki.
 
 ## Troubleshooting
 
